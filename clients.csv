@@ -1,0 +1,9 @@
+name,age,country,is_verified,transaction_amount,risk_score
+Sam,25,India,True,5000,1
+Fu,20,North Korea,False,15000,2
+Kun,12,Japan,True,35000,3
+Ali Khan,30,Iran,True,60000,4
+John Smith,28,United Kingdom,True,25000,2
+Mary,17,United Kingdom,True,8000,1
+Hassan,35,Iran,True,45000,3
+Priya,28,India,True,75000,4

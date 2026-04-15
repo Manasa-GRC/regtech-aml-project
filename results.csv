@@ -1,0 +1,9 @@
+name,country,risk_score,decision
+Sam,India,1,APPROVED
+Fu,North Korea,2,BLOCKED: KYC not verified
+Kun,Japan,3,BLOCKED: Underage
+Ali Khan,Iran,4,BLOCKED: Sanctioned country
+John Smith,United Kingdom,2,APPROVED
+Mary,United Kingdom,1,BLOCKED: Underage
+Hassan,Iran,3,BLOCKED: Sanctioned country
+Priya,India,4,BLOCKED: Transaction limit crossed
