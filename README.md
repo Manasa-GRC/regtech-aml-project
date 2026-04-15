@@ -26,4 +26,4 @@ As a Cybersecurity professional transitioning into GRC and RegTech, I wanted to 
 
 **Manasa Pushparanjan**  
 Senior Cybersecurity Analyst | Transitioning into GRC & RegTech  
-[LinkedIn](https://www.linkedin.com/in/your-linkedin-url)
+www.linkedin.com/in/manasa-pushparanjan
