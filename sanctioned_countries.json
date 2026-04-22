@@ -1,0 +1,28 @@
+{
+  "sanctioned_countries": [
+    { "country": "North Korea", "list": "UN / UK HMT / OFAC",  "risk_level": "Critical" },
+    { "country": "Iran",        "list": "UK HMT / OFAC / EU",  "risk_level": "Critical" },
+    { "country": "Syria",       "list": "UK HMT / OFAC / EU",  "risk_level": "Critical" },
+    { "country": "Russia",      "list": "UK HMT / EU",         "risk_level": "Critical" },
+    { "country": "Belarus",     "list": "UK HMT / EU",         "risk_level": "Critical" },
+    { "country": "Cuba",        "list": "OFAC",                "risk_level": "Critical" },
+    { "country": "Myanmar",     "list": "UK HMT / EU",         "risk_level": "Critical" },
+    { "country": "Venezuela",   "list": "OFAC / EU",           "risk_level": "Critical" }
+  ],
+  "high_risk_countries": [
+    { "country": "Afghanistan", "reason": "FATF high-risk jurisdiction" },
+    { "country": "Pakistan",    "reason": "FATF enhanced monitoring" },
+    { "country": "Nigeria",     "reason": "FATF enhanced monitoring" },
+    { "country": "South Sudan", "reason": "FATF high-risk jurisdiction" }
+  ],
+  "metadata": {
+    "version": "1.0",
+    "last_updated": "2026-04",
+    "sources": [
+      "UK HMT Sanctions List",
+      "OFAC Specially Designated Nationals",
+      "EU Consolidated Sanctions List",
+      "FATF High-Risk Jurisdictions"
+    ]
+  }
+}
