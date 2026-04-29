@@ -4,7 +4,14 @@ import plotly.express as px
 import plotly.graph_objects as go
 import json
 import os
+import io
 from datetime import datetime
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import mm
+from reportlab.platypus import SimpleDocTemplate, Paragraph as RLParagraph, Spacer, Table as RLTable, TableStyle, HRFlowable
+from reportlab.lib.enums import TA_LEFT, TA_CENTER
 
 # ─────────────────────────────────────────────
 # PAGE CONFIG
@@ -55,6 +62,180 @@ REQUIRED_COLUMNS = {
 
 DEFAULT_TX_LIMIT = 50_000
 DEFAULT_MIN_AGE  = 18
+
+AUDIT_LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "audit_log.csv")
+
+# ─────────────────────────────────────────────
+# AUDIT LOG FUNCTIONS  ← Phase 3
+# ─────────────────────────────────────────────
+def write_audit_log(analyst, filename, total, approved, blocked, high_crit, tx_limit, min_age):
+    """
+    Append one row to audit_log.csv for every screening run.
+    This is the compliance audit trail — records WHO screened WHAT, WHEN, and the outcome.
+    Mirrors the change management and session logging principles from PAM/CyberArk.
+    """
+    row = {
+        "timestamp":        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "analyst":          analyst if analyst else "Not specified",
+        "file_screened":    filename,
+        "total_clients":    total,
+        "approved":         approved,
+        "blocked":          blocked,
+        "high_critical":    high_crit,
+        "block_rate_pct":   round((blocked / total * 100), 1) if total > 0 else 0,
+        "tx_limit":         tx_limit,
+        "min_age":          min_age,
+    }
+    df_row = pd.DataFrame([row])
+    if os.path.exists(AUDIT_LOG_PATH):
+        df_row.to_csv(AUDIT_LOG_PATH, mode="a", header=False, index=False)
+    else:
+        df_row.to_csv(AUDIT_LOG_PATH, mode="w", header=True, index=False)
+
+
+def load_audit_log():
+    """Load the audit log CSV if it exists."""
+    if os.path.exists(AUDIT_LOG_PATH):
+        return pd.read_csv(AUDIT_LOG_PATH)
+    return pd.DataFrame()
+
+
+def generate_pdf_report(df_screened, analyst, filename, tx_limit, min_age):
+    """
+    Generate a PDF compliance report for the current screening run.
+    Returns bytes that can be downloaded via Streamlit.
+    Includes: run metadata, summary stats, full results table, blocked clients detail.
+    """
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4,
+                            leftMargin=20*mm, rightMargin=20*mm,
+                            topMargin=20*mm, bottomMargin=20*mm)
+    styles = getSampleStyleSheet()
+    TEAL = colors.HexColor("#0E7C7B")
+    RED  = colors.HexColor("#dc3545")
+    GREEN = colors.HexColor("#28a745")
+
+    title_style   = ParagraphStyle("title",   fontSize=18, textColor=TEAL,    fontName="Helvetica-Bold", spaceAfter=4)
+    sub_style     = ParagraphStyle("sub",     fontSize=10, textColor=colors.grey, fontName="Helvetica", spaceAfter=12)
+    heading_style = ParagraphStyle("heading", fontSize=12, textColor=TEAL,    fontName="Helvetica-Bold", spaceBefore=12, spaceAfter=6)
+    body_style    = ParagraphStyle("body",    fontSize=9,  textColor=colors.black, fontName="Helvetica", spaceAfter=4)
+
+    story = []
+
+    # Header
+    story.append(RLParagraph("AML Screening Compliance Report", title_style))
+    story.append(RLParagraph(
+        f"Generated: {datetime.now().strftime('%d %B %Y at %H:%M')}  |  "
+        f"Analyst: {analyst if analyst else 'Not specified'}  |  "
+        f"File: {filename}",
+        sub_style
+    ))
+    story.append(HRFlowable(width="100%", thickness=1.5, color=TEAL))
+    story.append(Spacer(1, 8*mm))
+
+    # Summary stats
+    total     = len(df_screened)
+    approved  = (df_screened["status"] == "APPROVED").sum()
+    blocked   = (df_screened["status"] == "BLOCKED").sum()
+    high_crit = df_screened["rag_rating"].isin(["High", "Critical"]).sum()
+    block_pct = round((blocked / total * 100), 1) if total > 0 else 0
+
+    story.append(RLParagraph("Screening Summary", heading_style))
+    summary_data = [
+        ["Metric", "Value"],
+        ["Total clients screened", str(total)],
+        ["Approved",               str(approved)],
+        ["Blocked",                str(blocked)],
+        ["Block rate",             f"{block_pct}%"],
+        ["High / Critical risk",   str(high_crit)],
+        ["Transaction limit",      f"£{tx_limit:,}"],
+        ["Minimum age",            str(min_age)],
+        ["Thresholds applied",     "JMLSG Part I, Chapter 4"],
+    ]
+    summary_table = RLTable(summary_data, colWidths=[80*mm, 80*mm])
+    summary_table.setStyle(TableStyle([
+        ("BACKGROUND",   (0, 0), (-1, 0), TEAL),
+        ("TEXTCOLOR",    (0, 0), (-1, 0), colors.white),
+        ("FONTNAME",     (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE",     (0, 0), (-1, -1), 9),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.whitesmoke, colors.white]),
+        ("GRID",         (0, 0), (-1, -1), 0.5, colors.lightgrey),
+        ("LEFTPADDING",  (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING",   (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING",(0, 0), (-1, -1), 5),
+    ]))
+    story.append(summary_table)
+    story.append(Spacer(1, 8*mm))
+
+    # Full results table
+    story.append(RLParagraph("Full Screening Results", heading_style))
+    results_data = [["Client", "Country", "Transaction (£)", "Risk Score", "RAG", "Decision"]]
+    for _, row in df_screened.iterrows():
+        results_data.append([
+            str(row["name"]),
+            str(row["country"]),
+            f"£{row['transaction_amount']:,.0f}",
+            str(row["weighted_score"]),
+            str(row["rag_rating"]),
+            str(row["decision"]),
+        ])
+    results_table = RLTable(results_data, colWidths=[35*mm, 30*mm, 28*mm, 22*mm, 18*mm, 37*mm])
+    rag_colour_map = {"Low": colors.HexColor("#d4edda"), "Medium": colors.HexColor("#fff3cd"),
+                      "High": colors.HexColor("#f8d7da"), "Critical": colors.HexColor("#f5c6cb")}
+    ts = [
+        ("BACKGROUND",   (0, 0), (-1, 0), TEAL),
+        ("TEXTCOLOR",    (0, 0), (-1, 0), colors.white),
+        ("FONTNAME",     (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE",     (0, 0), (-1, -1), 8),
+        ("GRID",         (0, 0), (-1, -1), 0.5, colors.lightgrey),
+        ("LEFTPADDING",  (0, 0), (-1, -1), 5),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+        ("TOPPADDING",   (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING",(0, 0), (-1, -1), 4),
+        ("ROWBACKGROUNDS", (1, 1), (-1, -1), [colors.whitesmoke, colors.white]),
+    ]
+    for i, row in enumerate(df_screened.itertuples(), start=1):
+        bg = colors.HexColor("#d4edda") if row.status == "APPROVED" else colors.HexColor("#f8d7da")
+        ts.append(("BACKGROUND", (5, i), (5, i), bg))
+        rag_bg = rag_colour_map.get(row.rag_rating, colors.white)
+        ts.append(("BACKGROUND", (4, i), (4, i), rag_bg))
+    results_table.setStyle(TableStyle(ts))
+    story.append(results_table)
+    story.append(Spacer(1, 8*mm))
+
+    # Blocked clients detail
+    blocked_df = df_screened[df_screened["status"] == "BLOCKED"]
+    if not blocked_df.empty:
+        story.append(HRFlowable(width="100%", thickness=0.5, color=colors.lightgrey))
+        story.append(RLParagraph("Blocked Clients — Detail", heading_style))
+        story.append(RLParagraph(
+            "The following clients were blocked and may require further review, "
+            "enhanced due diligence, or SAR consideration under MLR 2017.",
+            body_style
+        ))
+        story.append(Spacer(1, 4*mm))
+        for _, row in blocked_df.iterrows():
+            story.append(RLParagraph(
+                f"<b>{row['name']}</b> ({row['country']}) — Risk score: {row['weighted_score']}/100 "
+                f"[{row['rag_rating']}] — {row['decision']}",
+                body_style
+            ))
+
+    # Footer
+    story.append(Spacer(1, 12*mm))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=TEAL))
+    story.append(RLParagraph(
+        "AML Screening Dashboard v3.0  |  Aligned to JMLSG Part I Chapter 4 · FCA AML Sourcebook · MLR 2017  |  "
+        "github.com/Manasa-GRC/regtech-aml-project",
+        ParagraphStyle("footer", fontSize=7, textColor=colors.grey, fontName="Helvetica", alignment=TA_CENTER)
+    ))
+
+    doc.build(story)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
 
 # ─────────────────────────────────────────────
 # WEIGHTED RISK SCORING MODEL
@@ -280,7 +461,12 @@ with st.sidebar:
         for c in HIGH_RISK_COUNTRIES:
             st.markdown(f"⚠️ {c}")
     st.divider()
-    st.caption("AML Screening Dashboard v2.0")
+    st.subheader("Analyst")
+    analyst_name = st.text_input("Your name (for audit log)", placeholder="e.g. Manasa P.")
+    if analyst_name:
+        st.session_state["analyst_name"] = analyst_name
+    st.divider()
+    st.caption("AML Screening Dashboard v3.0")
     st.caption("Python · Streamlit · Pandas · Plotly")
 
 
@@ -290,14 +476,15 @@ with st.sidebar:
 st.title("🛡️ AML Screening Dashboard")
 st.caption(
     "Anti-Money Laundering client screening tool · "
-    "Aligned to JMLSG guidance and FCA AML requirements · v2.0"
+    "Aligned to JMLSG guidance and FCA AML requirements · v3.0"
 )
 st.divider()
 
-tab_screen, tab_risk, tab_sanctions = st.tabs([
+tab_screen, tab_risk, tab_sanctions, tab_audit = st.tabs([
     "📋 Screening",
     "📊 Risk Matrix",
     "🌍 Sanctions Reference",
+    "📝 Audit History",
 ])
 
 
@@ -460,6 +647,42 @@ with tab_screen:
                 file_name=f"aml_blocked_{timestamp}.csv",
                 mime="text/csv"
             )
+
+        # ── PDF Report ──────────────────────────
+        st.divider()
+        st.subheader("📄 Compliance Report")
+        st.caption("One-click PDF report for this screening run — includes summary stats, full results table, and blocked client detail.")
+
+        pdf_bytes = generate_pdf_report(
+            df_screened,
+            analyst=st.session_state.get("analyst_name", "Not specified"),
+            filename=uploaded_file.name,
+            tx_limit=tx_limit,
+            min_age=min_age
+        )
+        st.download_button(
+            label="📄 Download PDF Compliance Report",
+            data=pdf_bytes,
+            file_name=f"aml_compliance_report_{timestamp}.pdf",
+            mime="application/pdf",
+        )
+
+        # ── Write audit log ──────────────────────
+        # Only write once per unique file upload to avoid duplicate entries
+        audit_key = f"audited_{uploaded_file.name}_{timestamp[:13]}"
+        if audit_key not in st.session_state:
+            write_audit_log(
+                analyst=st.session_state.get("analyst_name", "Not specified"),
+                filename=uploaded_file.name,
+                total=total,
+                approved=int(approved),
+                blocked=int(blocked),
+                high_crit=int(high_crit),
+                tx_limit=tx_limit,
+                min_age=min_age
+            )
+            st.session_state[audit_key] = True
+            st.toast("✅ Audit log updated", icon="📝")
 
     else:
         st.info("👆 Upload a CSV file to begin screening.")
@@ -713,3 +936,89 @@ with tab_sanctions:
                             "Underage=100, age 18–25=30, 25+=0"],
     })
     st.dataframe(weight_data, use_container_width=True, hide_index=True)
+
+
+# ──────────────────────────────────────────────
+# TAB 4: AUDIT HISTORY  ← Phase 3
+# ──────────────────────────────────────────────
+with tab_audit:
+    st.subheader("📝 Audit History")
+    st.caption(
+        "Every screening run is automatically logged here. "
+        "This is your compliance audit trail — who screened what, when, and what the outcome was. "
+        "Aligned to the audit trail principle under FCA AML Sourcebook and ISO 27001 A.12.4."
+    )
+
+    df_audit = load_audit_log()
+
+    if df_audit.empty:
+        st.info(
+            "No audit entries yet. Upload and screen a CSV on the Screening tab "
+            "and the run will be logged here automatically."
+        )
+    else:
+        # Summary stats from audit log
+        st.subheader("Audit Summary")
+        a1, a2, a3, a4 = st.columns(4)
+        a1.metric("Total screening runs", len(df_audit))
+        a2.metric("Total clients screened", int(df_audit["total_clients"].sum()))
+        a3.metric("Total blocked", int(df_audit["blocked"].sum()))
+        a4.metric("Unique analysts", df_audit["analyst"].nunique())
+        st.divider()
+
+        # Full audit log table
+        st.subheader("Full Audit Log")
+        st.caption("Most recent runs shown first.")
+
+        display_audit = df_audit.sort_values("timestamp", ascending=False).copy()
+        display_audit.columns = [c.replace("_", " ").title() for c in display_audit.columns]
+
+        def style_audit_blocked(val):
+            try:
+                if int(val) > 0:
+                    return "background-color:#f8d7da;color:#721c24;font-weight:500;"
+            except:
+                pass
+            return ""
+
+        styled_audit = (
+            display_audit.style
+            .map(style_audit_blocked, subset=["Blocked"])
+        )
+        st.dataframe(styled_audit, use_container_width=True, hide_index=True)
+        st.divider()
+
+        # Trend chart
+        if len(df_audit) > 1:
+            st.subheader("Screening Activity Over Time")
+            df_audit["timestamp"] = pd.to_datetime(df_audit["timestamp"])
+            fig_trend = px.line(
+                df_audit.sort_values("timestamp"),
+                x="timestamp", y="total_clients",
+                markers=True,
+                title="Clients screened per run",
+                labels={"timestamp": "Run time", "total_clients": "Clients screened"}
+            )
+            fig_trend.update_traces(line_color="#0E7C7B", marker_color="#0E7C7B")
+            st.plotly_chart(fig_trend, use_container_width=True)
+            st.divider()
+
+        # Export audit log
+        st.subheader("⬇️ Export Audit Log")
+        st.caption("Download the complete audit trail as CSV for regulatory records.")
+        st.download_button(
+            "📥 Download full audit log",
+            data=df_audit.to_csv(index=False).encode("utf-8"),
+            file_name=f"aml_audit_log_{datetime.now().strftime('%Y%m%d')}.csv",
+            mime="text/csv"
+        )
+
+        # Clear audit log option
+        st.divider()
+        with st.expander("⚠️ Danger zone"):
+            st.warning("Clearing the audit log is irreversible. Only do this in development/testing.")
+            if st.button("Clear audit log"):
+                if os.path.exists(AUDIT_LOG_PATH):
+                    os.remove(AUDIT_LOG_PATH)
+                st.success("Audit log cleared.")
+                st.rerun()

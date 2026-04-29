@@ -53,6 +53,13 @@ This tool addresses all four.
 - 🌍 **External sanctions config** — sanctioned and FATF high-risk countries loaded from `sanctioned_countries.json`, no code changes needed to update watchlists
 - 📚 **JMLSG alignment table** — maps every scoring weight to its regulatory chapter reference
 
+
+### Phase 3 — Audit Trail & Compliance Reporting
+- 📝 **Automatic audit log** — every screening run writes to `audit_log.csv`: timestamp, analyst name, file screened, totals, block rate, thresholds applied. No manual step required.
+- 📊 **Audit History tab** — fourth tab showing all past screening runs as a searchable table, summary metrics across all runs, trend chart of screening activity over time, and full audit log export
+- 📄 **PDF compliance report** — one-click generation of a professionally formatted PDF per screening run, including summary stats, full RAG-rated results table, blocked clients detail with SAR guidance note, and regulatory footer (JMLSG · FCA AML Sourcebook · MLR 2017)
+- 👤 **Analyst attribution** — analyst name captured via sidebar and stamped on every audit entry and PDF report
+
 ---
 
 ## 🏗️ Architecture
@@ -63,6 +70,7 @@ regtech-aml-project/
 ├── aml_screening_app.py          # Main Streamlit application
 ├── sanctioned_countries.json     # Watchlist config (UK HMT · OFAC · EU · FATF)
 ├── clients.csv                   # Sample client dataset
+├── audit_log.csv                 # Auto-generated audit trail (created on first run)
 ├── requirements.txt              # Python dependencies
 └── README.md                     # This file
 ```
@@ -138,6 +146,7 @@ streamlit run aml_screening_app.py
 streamlit
 pandas
 plotly
+reportlab
 ```
 
 ---
@@ -163,7 +172,7 @@ A sample file (`clients.csv`) is included in this repository.
 
 - [x] **Phase 1** — CSV uploader, validation, configurable thresholds, basic screening
 - [x] **Phase 2** — Weighted risk scoring, RAG matrix, JMLSG alignment, external sanctions config
-- [ ] **Phase 3** — Audit trail logging, screening history tab, PDF compliance report generator
+- [x] **Phase 3** — Audit trail logging, audit history tab, PDF compliance report generator
 - [ ] **Phase 4** — Streamlit Cloud deployment, live demo link
 
 ---
